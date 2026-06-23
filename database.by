@@ -1,0 +1,166 @@
+import sqlite3
+
+
+DB_NAME = "library.db"
+
+
+def connect():
+    return sqlite3.connect(DB_NAME)
+
+
+def create_tables():
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS books (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        author TEXT NOT NULL,
+        year INTEGER,
+        status TEXT DEFAULT 'available'
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS borrow_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        book_id INTEGER,
+        member_id INTEGER,
+        borrow_date TEXT DEFAULT CURRENT_DATE,
+        return_date TEXT,
+        FOREIGN KEY(book_id) REFERENCES books(id),
+        FOREIGN KEY(member_id) REFERENCES members(id)
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def add_book(title, author, year):
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT INTO books (title, author, year)
+    VALUES (?, ?, ?)
+    """, (title, author, year))
+
+    conn.commit()
+    conn.close()
+
+
+def list_books():
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM books")
+    books = cursor.fetchall()
+
+    conn.close()
+    return books
+
+
+def add_member(name, email):
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT INTO members (name, email)
+    VALUES (?, ?)
+    """, (name, email))
+
+    conn.commit()
+    conn.close()
+
+
+def list_members():
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM members")
+    members = cursor.fetchall()
+
+    conn.close()
+    return members
+
+
+def borrow_book(book_id, member_id):
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT status FROM books WHERE id = ?", (book_id,))
+    book = cursor.fetchone()
+
+    if book is None:
+        conn.close()
+        return "Book not found."
+
+    if book[0] != "available":
+        conn.close()
+        return "Book is not available."
+
+    cursor.execute("SELECT id FROM members WHERE id = ?", (member_id,))
+    member = cursor.fetchone()
+
+    if member is None:
+        conn.close()
+        return "Member not found."
+
+    cursor.execute("""
+    INSERT INTO borrow_records (book_id, member_id)
+    VALUES (?, ?)
+    """, (book_id, member_id))
+
+    cursor.execute("""
+    UPDATE books
+    SET status = 'borrowed'
+    WHERE id = ?
+    """, (book_id,))
+
+    conn.commit()
+    conn.close()
+
+    return "Book borrowed successfully."
+
+
+def return_book(book_id):
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT status FROM books WHERE id = ?", (book_id,))
+    book = cursor.fetchone()
+
+    if book is None:
+        conn.close()
+        return "Book not found."
+
+    if book[0] != "borrowed":
+        conn.close()
+        return "Book is already available."
+
+    cursor.execute("""
+    UPDATE borrow_records
+    SET return_date = CURRENT_DATE
+    WHERE book_id = ? AND return_date IS NULL
+    """, (book_id,))
+
+    cursor.execute("""
+    UPDATE books
+    SET status = 'available'
+    WHERE id = ?
+    """, (book_id,))
+
+    conn.commit()
+    conn.close()
+
+    return "Book returned successfully."
